@@ -34,9 +34,13 @@ RUN set -xe && \
     cd toml11 && \
     cmake -DCMAKE_CXX_STANDARD=11 . && \
     make install -j $THREADS && \
-    cd .. && \
-    git clone https://github.com/tindy2013/subconverter --depth=1 && \
-    cd subconverter && \
+    cd ..
+
+COPY . /subconverter
+
+WORKDIR /subconverter
+
+RUN set -xe && \    
     [ -n "$SHA" ] && sed -i 's/\(v[0-9]\.[0-9]\.[0-9]\)/\1-'"$SHA"'/' src/version.h;\
     python3 -m ensurepip && \
     python3 -m pip install gitpython && \
