@@ -1,11 +1,6 @@
 name: GitHub CI
 on: 
-  push:
-    branches: [ master ]
-    tags:
-      - '**'
   workflow_dispatch:
-  pull_request:
 
 concurrency: 
   group: ${{ github.ref }}-${{ github.workflow }}
@@ -22,12 +17,6 @@ jobs:
           - arch: amd64
             artifact: subconverter_linux64
             os: ubuntu-latest
-          - arch: armv7
-            artifact: subconverter_armv7
-            os: [self-hosted, linux, ARM]
-          - arch: aarch64
-            artifact: subconverter_aarch64
-            os: [self-hosted, linux, ARM64]
     runs-on: ${{ matrix.os }}
     name: Linux ${{ matrix.arch }} Build
     steps:
