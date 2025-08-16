@@ -57,7 +57,8 @@ RUN set -xe && \
   python3 scripts/update_rules.py -c scripts/rules_config.conf && \
   # 关键：用宏把 Unhandled 版本的 API 映射到旧名，兼容头文件实现
   cmake -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_CXX_FLAGS="-DJS_SetHostUnhandledPromiseRejectionTracker=JS_SetHostPromiseRejectionTracker" \
+        -DCMAKE_C_FLAGS="-DCONFIG_BIGNUM" \
+        -DCMAKE_CXX_FLAGS="-DCONFIG_BIGNUM -DJS_SetHostUnhandledPromiseRejectionTracker=JS_SetHostPromiseRejectionTracker" \
         . && \
   make -j"${THREADS}"
 
