@@ -11,12 +11,12 @@ RUN set -xe && \
     git clone https://github.com/ftk/quickjspp --depth=1 && \
     cd quickjspp && \
     git submodule update --init && \
-    cmake -DCMAKE_BUILD_TYPE=Release . && \
-    make quickjs -j $THREADS && \
-    install -d /usr/lib/quickjs/ && \
-    install -m644 quickjs/libquickjs.a /usr/lib/quickjs/ && \
-    install -d /usr/include/quickjs/ && \
-    install -m644 quickjs/quickjs.h quickjs/quickjs-libc.h /usr/include/quickjs/ && \
+    # 直接进入 QuickJS 子模块，用 bignum 编译并安装到 /usr
+    cd quickjs && \
+    make -j "$THREADS" CONFIG_BIGNUM=y && \
+    make install PREFIX=/usr CONFIG_BIGNUM=y && \
+    cd .. && \
+    # 安装 quickjspp.hpp（C++ 封装头）
     install -m644 quickjspp.hpp /usr/include && \
     cd .. && \
     git clone https://github.com/PerMalmberg/libcron --depth=1 && \
