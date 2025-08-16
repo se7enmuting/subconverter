@@ -1,68 +1,67 @@
-# ========= builder =========
+# ===================== builder =====================
 FROM alpine:3.16 AS builder
 LABEL maintainer="tindy.it@gmail.com"
 
 ARG THREADS="4"
 ARG SHA=""
-# 可按需改成你要的 QuickJS 提交（必须早于 2025-04-26，且晚于 2024-01-13）
-ARG QUICKJS_COMMIT="229b07b9b2c811eaf84db209a1d6f9e2a8a7b0d9"
+
+# 基础工具 + 依赖
+RUN set -xe && \
+  apk add --no-cache --virtual .build-tools \
+    git g++ build-base linux-headers cmake python3 pkgconf wget && \
+  apk add --no-cache --virtual .build-deps \
+    curl-dev rapidjson-dev pcre2-dev yaml-cpp-dev
 
 WORKDIR /tmp
 
-# 基础构建依赖
-RUN set -xe && \
-  apk add --no-cache --virtual .build-tools \
-      git g++ build-base linux-headers cmake python3 pkgconf wget && \
-  apk add --no-cache --virtual .build-deps \
-      curl-dev rapidjson-dev pcre2-dev yaml-cpp-dev
-
-# ---- 构建 QuickJS（开启 bignum，并固定在安全提交）----
+# ---- 构建 QuickJS（启用 bignum，并固定到含 JS_GetClassID 的提交）----
+# 说明：我们用 c50de13b1573...（2024-02-21）这个提交：有 JS_GetClassID，且仍有 BigDecimal/BigFloat
+ENV QUICKJS_COMMIT=c50de13b1573735c57e918f2739428b82dd2481f
 RUN set -xe && \
   git clone https://github.com/bellard/quickjs && \
   cd quickjs && \
-  git checkout "${QUICKJS_COMMIT}" && \
+  # 保险做法：只拉需要的那一个提交（防止 shallow 导致 checkout 失败）
+  git fetch --depth=1 origin ${QUICKJS_COMMIT} && \
+  git checkout FETCH_HEAD && \
   make -j"${THREADS}" CONFIG_BIGNUM=y && \
   make install PREFIX=/usr CONFIG_BIGNUM=y
 
-# ---- 构建 libcron ----
+# ---- libcron ----
 RUN set -xe && \
   git clone --depth=1 https://github.com/PerMalmberg/libcron && \
   cd libcron && \
   git submodule update --init && \
   cmake -DCMAKE_BUILD_TYPE=Release . && \
-  make libcron -j"${THREADS}" && \
+  make libcron -j "${THREADS}" && \
   install -m644 libcron/out/Release/liblibcron.a /usr/lib/ && \
   install -d /usr/include/libcron/ && \
   install -m644 libcron/include/libcron/* /usr/include/libcron/ && \
   install -d /usr/include/date/ && \
   install -m644 libcron/externals/date/include/date/* /usr/include/date/
 
-# ---- 安装 toml11 头文件库 ----
+# ---- toml11 ----
 RUN set -xe && \
-  git clone --depth=1 --branch="v4.3.0" https://github.com/ToruNiina/toml11 && \
+  git clone --depth=1 --branch v4.3.0 https://github.com/ToruNiina/toml11 && \
   cd toml11 && \
   cmake -DCMAKE_CXX_STANDARD=11 . && \
-  make install -j"${THREADS}"
+  make install -j "${THREADS}"
 
-# 拷贝源码
-COPY . /subconverter
+# ---- 拷贝源码并编译 subconverter ----
 WORKDIR /subconverter
+COPY . /subconverter
 
-# 给 quickjspp.hpp 做个兼容补丁：老版 API 名称映射
-# （若目标环境已有 Unhandled 这个函数名，该宏不生效也不影响）
-RUN set -xe && \
-  sed -i '1i #ifndef JS_SetHostUnhandledPromiseRejectionTracker\n#define JS_SetHostUnhandledPromiseRejectionTracker JS_SetHostPromiseRejectionTracker\n#endif' include/quickjspp.hpp
-
-# 构建 subconverter
 RUN set -xe && \
   [ -n "${SHA}" ] && sed -i 's/\(v[0-9]\+\.[0-9]\+\.[0-9]\+\)/\1-'"${SHA}"'/' src/version.h; \
   python3 -m ensurepip && \
   python3 -m pip install --no-cache-dir gitpython && \
   python3 scripts/update_rules.py -c scripts/rules_config.conf && \
-  cmake -DCMAKE_BUILD_TYPE=Release . && \
+  # 关键：用宏把 Unhandled 版本的 API 映射到旧名，兼容头文件实现
+  cmake -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_CXX_FLAGS="-DJS_SetHostUnhandledPromiseRejectionTracker=JS_SetHostPromiseRejectionTracker" \
+        . && \
   make -j"${THREADS}"
 
-# ========= runtime =========
+# ===================== runtime =====================
 FROM alpine:3.16
 LABEL maintainer="tindy.it@gmail.com"
 
@@ -75,6 +74,6 @@ ENV TZ=Africa/Abidjan
 RUN ln -sf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 WORKDIR /base
-EXPOSE 25500/tcp
-# JSON 形式 CMD，避免信号处理问题的警告
 CMD ["subconverter"]
+
+EXPOSE 25500/tcp
